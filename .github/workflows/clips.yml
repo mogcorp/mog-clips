@@ -1,0 +1,43 @@
+name: clips
+on:
+  workflow_dispatch:
+    inputs:
+      run_id: { description: 'Release tag for the results', required: true }
+      job: { description: 'Job JSON, base64', required: true }
+permissions:
+  contents: write
+concurrency:
+  group: clips-${{ github.event.inputs.run_id }}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-inter > /dev/null
+          pip install -q faster-whisper yt-dlp gdown
+          npm install --no-audit --no-fund
+      - name: Job
+        run: |
+          mkdir -p work out
+          echo '${{ github.event.inputs.job }}' | base64 -d > work/job.json
+          cat work/job.json | head -c 600
+      - name: Run
+        env: { CHROME_PATH: /usr/bin/google-chrome }
+        run: python scripts/run.py work/job.json
+      - name: Publish results
+        if: always()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          T="${{ github.event.inputs.run_id }}"
+          ls out/* >/dev/null 2>&1 && FILES=$(ls out/*) || FILES=""
+          gh release create "$T" $FILES --title "$T" --notes "MOG clip factory output" --prerelease || { [ -n "$FILES" ] && gh release upload "$T" $FILES --clobber; }
+          # status.json goes up last, so n8n only reads the release once every file is there
+          echo "{\"status\":\"${{ job.status }}\",\"run\":\"${{ github.run_id }}\"}" > status.json
+          gh release upload "$T" status.json --clobber
