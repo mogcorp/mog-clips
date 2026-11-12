@@ -13,13 +13,18 @@ def fetch(src, dest='work/source.mp4'):
     if os.path.exists(dest):
         return dest
     if 'drive.google.com' in src:
+        import gdown
         if '/folders/' in src:
-            sh(['gdown', '--folder', '--quiet', src, '-O', 'work/drive'])
+            gdown.download_folder(url=src, output='work/drive', quiet=True)
             vids = sorted(glob.glob('work/drive/**/*.mp4', recursive=True) + glob.glob('work/drive/**/*.mov', recursive=True), key=os.path.getsize, reverse=True)
             if not vids: raise SystemExit('no video in drive folder')
             shutil.move(vids[0], dest)
         else:
-            sh(['gdown', '--fuzzy', '--quiet', src, '-O', dest])
+            m = re.search(r'/d/([A-Za-z0-9_-]+)', src) or re.search(r'[?&]id=([A-Za-z0-9_-]+)', src)
+            if not m: raise SystemExit('cannot read drive file id')
+            out = gdown.download(id=m.group(1), output=dest, quiet=True)
+            if not out or not os.path.exists(dest): raise SystemExit('drive download failed (is the file shared publicly?)')
+        print('downloaded', os.path.getsize(dest), 'bytes', flush=True)
     elif re.search(r'\.(mp4|mov|m4v|webm)(\?|$)', src):
         sh(['curl', '-L', '--fail', '-o', dest, src])
     else:
