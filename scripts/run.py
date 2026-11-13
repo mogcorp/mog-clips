@@ -28,7 +28,14 @@ def fetch(src, dest='work/source.mp4'):
     elif re.search(r'\.(mp4|mov|m4v|webm)(\?|$)', src):
         sh(['curl', '-L', '--fail', '-o', dest, src])
     else:
-        sh(['yt-dlp', '-f', 'bv*[height<=1080]+ba/b[height<=1080]/b', '--merge-output-format', 'mp4', '-o', dest, src])
+        # live and VOD sources (Twitch, Kick): only the newest video, and only a window of it so long streams fit the run
+        cmd = ['yt-dlp', '-f', 'bv*[height<=1080]+ba/b[height<=1080]/b', '--merge-output-format', 'mp4', '--playlist-items', '1', '-o', dest]
+        sec = JOB.get('section')
+        if not sec and re.search(r'twitch\.tv|kick\.com', src):
+            sec = [0, 5400]
+        if sec:
+            cmd += ['--download-sections', '*%d-%d' % (int(sec[0]), int(sec[1])), '--force-keyframes-at-cuts']
+        sh(cmd + [src])
     return dest
 
 def model(size):
@@ -62,6 +69,9 @@ def render(job):
     sh(['node', 'render.mjs', 'work/render.json'])
     json.dump([{k: v for k, v in c.items() if k != 'words'} for c in clips], open('out/clips.json', 'w'))
 
+JOB = {}
+
 if __name__ == '__main__':
     job = json.load(open(sys.argv[1] if len(sys.argv) > 1 else 'work/job.json'))
+    JOB.update(job)
     (scan if job.get('mode') == 'scan' else render)(job)
